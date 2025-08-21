@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visor de Pueblos Indígenas CNPV‑2018</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    h1 { margin-bottom: 1rem; }
+    .selectors { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+    .selectors div { display: flex; flex-direction: column; }
+    select { min-width: 200px; min-height: 100px; }
+    button { padding: 0.5rem 1rem; margin-top: 0.5rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background-color: #f5f5f5; }
+    .kpi { display: inline-block; margin-right: 2rem; }
+    .kpi span { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Visor de Pueblos Indígenas – CNPV‑2018</h1>
+  <div class="selectors">
+    <div>
+      <label for="puebloSelect">Pueblo(s)</label>
+      <select id="puebloSelect" multiple></select>
+    </div>
+    <div>
+      <label for="departamentoSelect">Departamento(s)</label>
+      <select id="departamentoSelect" multiple></select>
+    </div>
+    <div>
+      <label for="municipioSelect">Municipio(s)</label>
+      <select id="municipioSelect" multiple></select>
+    </div>
+  </div>
+  <button id="consultarBtn">Consultar</button>
+  <button id="descargarBtn">Descargar Excel</button>
+
+  <div id="resultados" style="margin-top:1.5rem;"></div>
+
+  <script>
+    // Configuración de la URL base de la API
+    const API_BASE = 'http://localhost:8000';
+
+    async function cargarOpciones() {
+      try {
+        const resp = await fetch(`${API_BASE}/options`);
+        const data = await resp.json();
+        poblarSelect(document.getElementById('puebloSelect'), data.pueblos);
+        poblarSelect(document.getElementById('departamentoSelect'), data.departamentos);
+        poblarSelect(document.getElementById('municipioSelect'), data.municipios);
+      } catch (err) {
+        console.error('Error al cargar opciones:', err);
+      }
+    }
+
+    function poblarSelect(selectElem, opciones) {
+      // Limpia y agrega opciones
+      selectElem.innerHTML = '';
+      opciones.forEach(opt => {
+        const optionElem = document.createElement('option');
+        optionElem.value = opt;
+        optionElem.textContent = opt;
+        selectElem.appendChild(optionElem);
+      });
+    }
+
+    function obtenerSeleccion(selectElem) {
+      return Array.from(selectElem.selectedOptions).map(opt => opt.value);
+    }
+
+    async function consultar() {
+      const pueblos = obtenerSeleccion(document.getElementById('puebloSelect'));
+      const departamentos = obtenerSeleccion(document.getElementById('departamentoSelect'));
+      const municipios = obtenerSeleccion(document.getElementById('municipioSelect'));
+      const params = new URLSearchParams();
+      pueblos.forEach(p => params.append('pueblos', p));
+      departamentos.forEach(d => params.append('departamentos', d));
+      municipios.forEach(m => params.append('municipios', m));
+      try {
+        // KPI agregados
+        const respAgg = await fetch(`${API_BASE}/aggregate?${params.toString()}`);
+        if (!respAgg.ok) {
+          const errData = await respAgg.json();
+          mostrarError(errData.detail || 'Error en la consulta');
+          return;
+        }
+        const aggData = await respAgg.json();
+        // Tabla por pueblo
+        const respPueblo = await fetch(`${API_BASE}/by_pueblo?${params.toString()}`);
+        const puebloData = await respPueblo.json();
+        mostrarResultados(aggData, puebloData);
+      } catch (err) {
+        mostrarError('No se pudo consultar la API: ' + err);
+      }
+    }
+
+    function mostrarResultados(agg, pueblosTabla) {
+      const cont = document.getElementById('resultados');
+      cont.innerHTML = '';
+      // KPIs
+      const kpiDiv = document.createElement('div');
+      kpiDiv.innerHTML = `
+        <div class="kpi">Población total: <span>${agg.poblacion_indigena_total.toLocaleString()}</span></div>
+        <div class="kpi">Nº de pueblos: <span>${agg.num_pueblos}</span></div>
+        <div class="kpi">HHI: <span>${agg.HHI?.toFixed(3) ?? 'N/A'}</span></div>
+        <div class="kpi">Simpson: <span>${agg.Simpson?.toFixed(3) ?? 'N/A'}</span></div>
+        <div class="kpi">Shannon: <span>${agg.Shannon?.toFixed(3) ?? 'N/A'}</span></div>
+      `;
+      cont.appendChild(kpiDiv);
+      // Tabla
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      thead.innerHTML = '<tr><th>Pueblo</th><th>Población</th><th>Participación</th></tr>';
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      pueblosTabla.forEach(row => {
+        const tr = document.createElement('tr');
+        const participacion = (row.participacion * 100).toFixed(2) + '%';
+        tr.innerHTML = `<td>${row.Pueblo}</td><td>${row.poblacion.toLocaleString()}</td><td>${participacion}</td>`;
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      cont.appendChild(table);
+    }
+
+    function mostrarError(msg) {
+      const cont = document.getElementById('resultados');
+      cont.innerHTML = `<p style="color:red">${msg}</p>`;
+    }
+
+    async function descargarExcel() {
+      const pueblos = obtenerSeleccion(document.getElementById('puebloSelect'));
+      const departamentos = obtenerSeleccion(document.getElementById('departamentoSelect'));
+      const municipios = obtenerSeleccion(document.getElementById('municipioSelect'));
+      const params = new URLSearchParams();
+      pueblos.forEach(p => params.append('pueblos', p));
+      departamentos.forEach(d => params.append('departamentos', d));
+      municipios.forEach(m => params.append('municipios', m));
+      try {
+        const resp = await fetch(`${API_BASE}/download_excel?${params.toString()}`);
+        if (!resp.ok) {
+          const errData = await resp.json();
+          mostrarError(errData.detail || 'No se pudo descargar el Excel');
+          return;
+        }
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'reporte_pueblos_indigenas.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        mostrarError('No se pudo descargar el Excel: ' + err);
+      }
+    }
+
+    document.getElementById('consultarBtn').addEventListener('click', consultar);
+    document.getElementById('descargarBtn').addEventListener('click', descargarExcel);
+
+    // Cargar opciones al iniciar
+    cargarOpciones();
+  </script>
+</body>
+</html>
