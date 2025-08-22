@@ -7,7 +7,8 @@ agregados (`export_excel`).
 
 """
 
-from .build_dataset import build_dataset
+from .build_dataset import build_dataset, build_sqlite_database
 from .export_excel import export_excel
 
-__all__ = ["build_dataset", "export_excel"]
+__all__ = ["build_dataset", "build_sqlite_database", "export_excel"]
+
